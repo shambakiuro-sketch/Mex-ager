@@ -70,8 +70,8 @@ export default function Auth({ onAuthSuccess }) {
             margin: '0 0 0.5rem 0',
             fontSize: '1.8rem'
           }}>
-            Jackson Messaging
-          </h1>
+  Mex ager
+</h1>
           <p style={{
             color: '#999',
             margin: '0',
