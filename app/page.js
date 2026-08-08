@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import Auth from './components/Auth';
+import Chat from './components/Chat';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -11,7 +12,6 @@ export default function Home() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      console.log('AUTH STATE:', currentUser);
       setUser(currentUser);
       setLoading(false);
     });
@@ -20,16 +20,30 @@ export default function Home() {
   }, []);
 
   if (loading) {
-    return <div>Checking login...</div>;
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          background: '#f0f0f0'
+        }}
+      >
+        Loading...
+      </div>
+    );
   }
 
-  return user ? (
-    <div style={{ padding: '40px', fontFamily: 'Arial' }}>
-      <h1>Firebase Authentication Works ✅</h1>
-      <p>Logged in as: {user.email}</p>
-      <p>UID: {user.uid}</p>
-    </div>
-  ) : (
-    <Auth onAuthSuccess={() => setUser(auth.currentUser)} />
+  if (user) {
+    return <Chat />;
+  }
+
+  return (
+    <Auth
+      onAuthSuccess={() => {
+        setUser(auth.currentUser);
+      }}
+    />
   );
 }
