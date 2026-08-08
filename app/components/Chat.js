@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { auth, database } from '../lib/firebase';
-import { ref, onValue, push, set } from 'firebase/database';
+import { ref, onValue, set } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import UserList from './UserList';
 import ChatWindowEnhanced from './ChatWindow';
@@ -15,57 +15,103 @@ export default function Chat() {
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    setCurrentUser(auth.currentUser);
-    
-    // Load all users
-    const usersRef = ref(database, 'users');
-    onValue(usersRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const userList = Object.entries(data).map(([uid, userData]) => ({
-          uid,
-          ...userData
-        })).filter(user => user.uid !== auth.currentUser.uid);
-        setUsers(userList);
-      }
-      setLoading(false);
-    });
+    const currentAuthUser = auth.currentUser;
 
-    // Save current user info
-    if (auth.currentUser) {
-      const userRef = ref(database, `users/${auth.currentUser.uid}`);
-      set(userRef, {
-        displayName: auth.currentUser.displayName || 'Anonymous',
-        email: auth.currentUser.email,
-        lastSeen: new Date().toISOString()
-      });
+    if (!currentAuthUser) {
+      setLoading(false);
+      return;
     }
 
+    setCurrentUser(currentAuthUser);
+
+    // Load users
+    const usersRef = ref(database, 'users');
+
+    const unsubscribe = onValue(
+      usersRef,
+      (snapshot) => {
+        const data = snapshot.val();
+
+        if (data) {
+          const userList = Object.entries(data)
+            .map(([uid, userData]) => ({
+              uid,
+              ...userData
+            }))
+            .filter((user) => user.uid !== currentAuthUser.uid);
+
+          setUsers(userList);
+        } else {
+          setUsers([]);
+        }
+
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Failed to load users:', error);
+        setUsers([]);
+        setLoading(false);
+      }
+    );
+
+    // Save current user's information
+    const userRef = ref(
+      database,
+      `users/${currentAuthUser.uid}`
+    );
+
+    set(userRef, {
+      displayName: currentAuthUser.displayName || 'Anonymous',
+      email: currentAuthUser.email,
+      lastSeen: new Date().toISOString()
+    }).catch((error) => {
+      console.error('Failed to save user:', error);
+    });
+
     // Load dark mode preference
-    const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+    const savedDarkMode =
+      localStorage.getItem('darkMode') === 'true';
+
     setDarkMode(savedDarkMode);
+
+    return () => unsubscribe();
   }, []);
 
   const handleDarkModeToggle = () => {
-    setDarkMode(!darkMode);
-    localStorage.setItem('darkMode', !darkMode);
+    const newMode = !darkMode;
+
+    setDarkMode(newMode);
+    localStorage.setItem('darkMode', newMode);
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
-    window.location.reload();
+    try {
+      await signOut(auth);
+      window.location.reload();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
   if (loading) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: darkMode ? '#1a1a1a' : '#f0f0f0'
-      }}>
-        <p style={{ color: darkMode ? '#e0e0e0' : '#333' }}>Loading...</p>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          background: darkMode ? '#1a1a1a' : '#f0f0f0',
+          fontFamily: 'Arial, sans-serif'
+        }}
+      >
+        <p
+          style={{
+            color: darkMode ? '#e0e0e0' : '#333'
+          }}
+        >
+          Loading...
+        </p>
       </div>
     );
   }
@@ -73,36 +119,63 @@ export default function Chat() {
   const sidebarBg = darkMode ? '#2d2d2d' : '#f0f0f0';
   const sidebarBorder = darkMode ? '#444' : '#ddd';
   const headerBg = darkMode ? '#1a1a1a' : '#667eea';
-  const headerText = 'white';
   const textColor = darkMode ? '#e0e0e0' : '#333';
   const mutedText = darkMode ? '#888' : '#666';
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: darkMode ? '#1a1a1a' : '#fff' }}>
-      {/* Sidebar */}
-      <div style={{
-        width: '300px',
-        background: sidebarBg,
-        borderRight: `1px solid ${sidebarBorder}`,
+    <div
+      style={{
         display: 'flex',
-        flexDirection: 'column'
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: '1rem',
-          background: headerBg,
-          color: headerText,
-          borderBottom: `1px solid ${sidebarBorder}`,
+        height: '100vh',
+        background: darkMode ? '#1a1a1a' : '#fff',
+        fontFamily: 'Arial, sans-serif'
+      }}
+    >
+      {/* Sidebar */}
+      <div
+        style={{
+          width: '300px',
+          background: sidebarBg,
+          borderRight: `1px solid ${sidebarBorder}`,
           display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
+          flexDirection: 'column'
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '1rem',
+            background: headerBg,
+            color: 'white',
+            borderBottom: `1px solid ${sidebarBorder}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
           <div>
-            <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.3rem' }}>Messages</h2>
-            <p style={{ margin: '0', fontSize: '0.9rem', opacity: 0.9 }}>
-              {currentUser?.displayName || currentUser?.email}
+            <h2
+              style={{
+                margin: '0 0 0.5rem 0',
+                fontSize: '1.3rem'
+              }}
+            >
+              Messages
+            </h2>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: '0.9rem',
+                opacity: 0.9
+              }}
+            >
+              {currentUser?.displayName ||
+                currentUser?.email ||
+                'User'}
             </p>
           </div>
+
           <button
             onClick={handleDarkModeToggle}
             style={{
@@ -121,30 +194,32 @@ export default function Chat() {
         </div>
 
         {/* User List */}
-        <UserList users={users} onSelectUser={setSelectedUser} selectedUser={selectedUser} darkMode={darkMode} />
+        <UserList
+          users={users}
+          onSelectUser={setSelectedUser}
+          selectedUser={selectedUser}
+          darkMode={darkMode}
+        />
 
-        {/* Logout Button */}
-        <div style={{
-          padding: '1rem',
-          borderTop: `1px solid ${sidebarBorder}`,
-          display: 'flex',
-          gap: '0.5rem'
-        }}>
+        {/* Logout */}
+        <div
+          style={{
+            padding: '1rem',
+            borderTop: `1px solid ${sidebarBorder}`
+          }}
+        >
           <button
             onClick={handleLogout}
             style={{
-              flex: 1,
+              width: '100%',
               padding: '0.8rem',
               background: '#e74c3c',
               color: 'white',
               border: 'none',
               borderRadius: '5px',
               cursor: 'pointer',
-              fontWeight: 'bold',
-              transition: 'all 0.2s'
+              fontWeight: 'bold'
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#c0392b'}
-            onMouseLeave={(e) => e.currentTarget.style.background = '#e74c3c'}
           >
             Logout
           </button>
@@ -152,21 +227,48 @@ export default function Chat() {
       </div>
 
       {/* Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
         {selectedUser ? (
-          <ChatWindowEnhanced selectedUser={selectedUser} currentUser={currentUser} darkMode={darkMode} />
+          <ChatWindowEnhanced
+            selectedUser={selectedUser}
+            currentUser={currentUser}
+            darkMode={darkMode}
+          />
         ) : (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: mutedText,
-            background: darkMode ? '#1a1a1a' : '#fafafa'
-          }}>
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: mutedText,
+              background: darkMode ? '#1a1a1a' : '#fafafa'
+            }}
+          >
             <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: '3rem', margin: '0' }}>💬</p>
-              <p style={{ fontSize: '1.1rem', margin: '0.5rem 0 0 0' }}>Select a user to start messaging</p>
+              <p
+                style={{
+                  fontSize: '3rem',
+                  margin: 0
+                }}
+              >
+                💬
+              </p>
+
+              <p
+                style={{
+                  fontSize: '1.1rem',
+                  margin: '0.5rem 0 0'
+                }}
+              >
+                Select a user to start messaging
+              </p>
             </div>
           </div>
         )}
