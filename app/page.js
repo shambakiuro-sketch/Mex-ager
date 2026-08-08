@@ -12,9 +12,10 @@ export default function Home() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
+  console.log("🔥 AUTH STATE FIRED:", currentUser);
+  setUser(currentUser);
+  setLoading(false);
+});
 
     return () => unsubscribe();
   }, []);
