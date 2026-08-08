@@ -7,6 +7,7 @@ import Auth from './components/Auth';
 import Chat from './components/Chat';
 
 export default function Home() {
+  console.log("🔥 Firebase Auth object:", auth);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
