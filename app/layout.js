@@ -1,5 +1,5 @@
 export const metadata = {
-  title: 'Jackson Messaging App',
+  title: 'Mex ager',
   description: 'Real-time messaging application',
 }
 
