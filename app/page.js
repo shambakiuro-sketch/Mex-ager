@@ -1,30 +1,35 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import Auth from './components/Auth';
 
 export default function Home() {
-  const [status, setStatus] = useState('Starting...');
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setStatus('Firebase loaded. Waiting for Auth...');
-
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('AUTH CALLBACK:', user);
-      setStatus(user ? 'USER IS LOGGED IN' : 'NO USER IS LOGGED IN');
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      console.log('AUTH STATE:', currentUser);
+      setUser(currentUser);
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  return (
-    <div style={{
-      padding: '50px',
-      fontFamily: 'Arial',
-      fontSize: '24px'
-    }}>
-      {status}
+  if (loading) {
+    return <div>Checking login...</div>;
+  }
+
+  return user ? (
+    <div style={{ padding: '40px', fontFamily: 'Arial' }}>
+      <h1>Firebase Authentication Works ✅</h1>
+      <p>Logged in as: {user.email}</p>
+      <p>UID: {user.uid}</p>
     </div>
+  ) : (
+    <Auth onAuthSuccess={() => setUser(auth.currentUser)} />
   );
 }
