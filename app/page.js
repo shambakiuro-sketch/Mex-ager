@@ -21,17 +21,23 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: '#f0f0f0'
-      }}>
-        <p>Loading...</p>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          background: '#f0f0f0'
+        }}
+      >
+        Loading...
       </div>
     );
   }
 
-  return user ? <Chat /> : <Auth onAuthSuccess={() => setUser(auth.currentUser)} />;
+  return user ? (
+    <Chat user={user} />
+  ) : (
+    <Auth onAuthSuccess={() => setUser(auth.currentUser)} />
+  );
 }
