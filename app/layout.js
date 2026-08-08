@@ -1,6 +1,9 @@
 export const metadata = {
   title: 'Mex ager',
   description: 'Real-time messaging application',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({ children }) {
