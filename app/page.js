@@ -1,42 +1,30 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import Auth from './components/Auth';
-import Chat from './components/Chat';
 
 export default function Home() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState('Starting...');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      console.log('AUTH STATE FIRED:', currentUser);
-      setUser(currentUser);
-      setLoading(false);
+    setStatus('Firebase loaded. Waiting for Auth...');
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('AUTH CALLBACK:', user);
+      setStatus(user ? 'USER IS LOGGED IN' : 'NO USER IS LOGGED IN');
     });
 
     return () => unsubscribe();
   }, []);
 
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: '#f0f0f0'
-      }}>
-        Loading...
-      </div>
-    );
-  }
-
-  return user ? (
-    <Chat user={user} />
-  ) : (
-    <Auth onAuthSuccess={() => setUser(auth.currentUser)} />
+  return (
+    <div style={{
+      padding: '50px',
+      fontFamily: 'Arial',
+      fontSize: '24px'
+    }}>
+      {status}
+    </div>
   );
 }
