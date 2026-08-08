@@ -13,16 +13,10 @@ const firebaseConfig = {
   databaseURL: "https://jackson-messaging-app-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);
-
-// Initialize Realtime Database
 export const database = getDatabase(app);
-
-// Initialize Cloud Storage
 export const storage = getStorage(app);
 
 export default app;
