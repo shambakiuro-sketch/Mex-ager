@@ -10,7 +10,7 @@ const firebaseConfig = {
   storageBucket: "jackson-messaging-app.firebasestorage.app",
   messagingSenderId: "39972249513",
   appId: "1:39972249513:web:babbc9f3ca42c3dee1eeb8",
-  databaseURL: "https://jackson-messaging-app-default-rtdb.firebaseio.com"
+  databaseURL: "https://jackson-messaging-app-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
 // Initialize Firebase
