@@ -5,7 +5,7 @@ import { auth, database } from '../lib/firebase';
 import { ref, onValue, push, set } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import UserList from './UserList';
-import ChatWindowEnhanced from './ChatWindow-Enhanced';
+import ChatWindowEnhanced from './ChatWindow';
 
 export default function Chat() {
   const [users, setUsers] = useState([]);
