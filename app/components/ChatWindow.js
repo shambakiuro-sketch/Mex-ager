@@ -2,8 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { auth, database, storage } from '../lib/firebase';
-import { ref, onValue, push, set, update } from 'firebase/database';
-import { getDownloadURL, uploadBytes } from 'firebase/storage';
+import {
+  ref,
+  onValue,
+  push,
+  set,
+  update
+} from 'firebase/database';
+import {
+  getDownloadURL,
+  uploadBytes
+} from 'firebase/storage';
 
 export default function ChatWindow({
   selectedUser,
@@ -16,6 +25,7 @@ export default function ChatWindow({
   const [loading, setLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
 
+  // Recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
@@ -23,38 +33,60 @@ export default function ChatWindow({
   const [recordedAudio, setRecordedAudio] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [waveformData, setWaveformData] = useState([]);
-  const [isHoldingMic, setIsHoldingMic] = useState(false);
 
   const messagesEndRef = useRef(null);
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recordingIntervalRef = useRef(null);
   const streamRef = useRef(null);
+
   const micButtonRef = useRef(null);
+
   const analyserRef = useRef(null);
   const audioContextRef = useRef(null);
   const animationFrameRef = useRef(null);
+
   const lastNotifiedRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
+  // Recording gesture refs
+  const recordingStartYRef = useRef(0);
+  const isPointerDownRef = useRef(false);
   const pointerIdRef = useRef(null);
-  const pointerDownRef = useRef(false);
-  const recordingStartedRef = useRef(false);
-  const lockTriggeredRef = useRef(false);
+
+  if (!currentUser || !selectedUser) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
+        Select a user to start chatting
+      </div>
+    );
+  }
 
   const getChatId = (uid1, uid2) => {
     const ids = [uid1, uid2].sort();
     return `chats/${ids.join('_')}`;
   };
 
-  const chatId = getChatId(currentUser.uid, selectedUser.uid);
+  const chatId = getChatId(
+    currentUser.uid,
+    selectedUser.uid
+  );
 
   const formatTime = (seconds) => {
-    const total = Math.max(0, Math.floor(Number(seconds) || 0));
-    const mins = Math.floor(total / 60);
-    const secs = total % 60;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
 
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs
+      .toString()
+      .padStart(2, '0')}`;
   };
 
   const linkifyText = (text = '') => {
@@ -83,40 +115,11 @@ export default function ChatWindow({
     });
   };
 
-  const scrollToBottom = () => {
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: 'smooth'
-      });
-    });
-  };
-
-  const cleanupRecordingResources = () => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    if (recordingIntervalRef.current) {
-      clearInterval(recordingIntervalRef.current);
-      recordingIntervalRef.current = null;
-    }
-
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-
-    analyserRef.current = null;
-
-    if (streamRef.current) {
-      streamRef.current
-        .getTracks()
-        .forEach((track) => track.stop());
-
-      streamRef.current = null;
-    }
-  };
+  /*
+   * ============================
+   * LOAD MESSAGES
+   * ============================
+   */
 
   useEffect(() => {
     const messagesRef = ref(
@@ -136,7 +139,6 @@ export default function ChatWindow({
 
         if (!data) {
           setMessages([]);
-          setLoading(false);
           return;
         }
 
@@ -152,7 +154,6 @@ export default function ChatWindow({
           );
 
         setMessages(messageList);
-        setLoading(false);
 
         const lastMessage =
           messageList[messageList.length - 1];
@@ -162,7 +163,8 @@ export default function ChatWindow({
           lastMessage.sender !== currentUser.uid &&
           lastMessage.id !== lastNotifiedRef.current
         ) {
-          lastNotifiedRef.current = lastMessage.id;
+          lastNotifiedRef.current =
+            lastMessage.id;
 
           const messageText =
             lastMessage.type === 'voice'
@@ -170,10 +172,10 @@ export default function ChatWindow({
                   lastMessage.duration || 0
                 }s`
               : lastMessage.type === 'file'
-                ? `📎 ${
-                    lastMessage.fileName || 'File'
-                  }`
-                : lastMessage.text || '';
+              ? `📎 ${
+                  lastMessage.fileName || 'File'
+                }`
+              : lastMessage.text || '';
 
           onMessageNotification?.(
             lastMessage.senderName ||
@@ -184,6 +186,7 @@ export default function ChatWindow({
           );
         }
 
+        // Mark incoming messages as read
         messageList.forEach((msg) => {
           if (
             msg.sender !== currentUser.uid &&
@@ -213,15 +216,15 @@ export default function ChatWindow({
           'Failed to load messages:',
           error
         );
-
-        setLoading(false);
       }
     );
 
     const unsubscribeTyping = onValue(
       typingRef,
       (snapshot) => {
-        setIsTyping(snapshot.val() === true);
+        setIsTyping(
+          snapshot.val() === true
+        );
       },
       (error) => {
         console.error(
@@ -236,10 +239,12 @@ export default function ChatWindow({
       unsubscribeTyping();
 
       if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
+        clearTimeout(
+          typingTimeoutRef.current
+        );
       }
 
-      cleanupRecordingResources();
+      stopMediaTracks();
     };
   }, [
     chatId,
@@ -247,8 +252,61 @@ export default function ChatWindow({
     currentUser.uid
   ]);
 
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: 'smooth'
+      });
+    });
+  };
+
+  /*
+   * ============================
+   * RECORDING HELPERS
+   * ============================
+   */
+
+  const stopMediaTracks = () => {
+    if (streamRef.current) {
+      streamRef.current
+        .getTracks()
+        .forEach((track) => track.stop());
+
+      streamRef.current = null;
+    }
+
+    if (recordingIntervalRef.current) {
+      clearInterval(
+        recordingIntervalRef.current
+      );
+
+      recordingIntervalRef.current = null;
+    }
+
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(
+        animationFrameRef.current
+      );
+
+      animationFrameRef.current = null;
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current
+        .close()
+        .catch(() => {});
+
+      audioContextRef.current = null;
+    }
+
+    analyserRef.current = null;
+  };
+
   const getSupportedMimeType = () => {
-    if (typeof MediaRecorder === 'undefined') {
+    if (
+      typeof MediaRecorder ===
+      'undefined'
+    ) {
       return '';
     }
 
@@ -297,9 +355,10 @@ export default function ChatWindow({
 
       analyserRef.current = analyser;
 
-      const dataArray = new Uint8Array(
-        analyser.frequencyBinCount
-      );
+      const dataArray =
+        new Uint8Array(
+          analyser.frequencyBinCount
+        );
 
       const draw = () => {
         if (!analyserRef.current) {
@@ -311,7 +370,10 @@ export default function ChatWindow({
         );
 
         setWaveformData(
-          Array.from(dataArray).slice(0, 32)
+          Array.from(dataArray).slice(
+            0,
+            32
+          )
         );
 
         animationFrameRef.current =
@@ -327,25 +389,28 @@ export default function ChatWindow({
     }
   };
 
+  /*
+   * ============================
+   * START RECORDING
+   * ============================
+   */
+
   const startRecording = async () => {
-    if (
-      recordingStartedRef.current ||
-      loading
-    ) {
-      return;
-    }
-
-    if (
-      !navigator.mediaDevices?.getUserMedia
-    ) {
-      alert(
-        'Your browser does not support microphone recording.'
-      );
-
+    if (isRecording || loading) {
       return;
     }
 
     try {
+      if (
+        !navigator.mediaDevices?.getUserMedia
+      ) {
+        alert(
+          'Your browser does not support microphone recording.'
+        );
+
+        return;
+      }
+
       const stream =
         await navigator.mediaDevices.getUserMedia(
           {
@@ -356,11 +421,7 @@ export default function ChatWindow({
       const mimeType =
         getSupportedMimeType();
 
-      if (
-        typeof MediaRecorder ===
-          'undefined' ||
-        !mimeType
-      ) {
+      if (!mimeType) {
         stream
           .getTracks()
           .forEach((track) =>
@@ -368,7 +429,7 @@ export default function ChatWindow({
           );
 
         alert(
-          'This browser cannot record audio in a supported format.'
+          'This browser does not support audio recording.'
         );
 
         return;
@@ -376,26 +437,22 @@ export default function ChatWindow({
 
       audioChunksRef.current = [];
 
-      recordingStartedRef.current = true;
-
       setRecordingTime(0);
       setIsRecording(true);
       setIsLocked(false);
       setIsPaused(false);
-      setShowPreview(false);
       setRecordedAudio(null);
+      setShowPreview(false);
       setWaveformData([]);
 
       streamRef.current = stream;
 
       startWaveform(stream);
 
-      const recorder = new MediaRecorder(
-        stream,
-        {
+      const recorder =
+        new MediaRecorder(stream, {
           mimeType
-        }
-      );
+        });
 
       mediaRecorderRef.current =
         recorder;
@@ -403,7 +460,10 @@ export default function ChatWindow({
       recorder.ondataavailable = (
         event
       ) => {
-        if (event.data?.size > 0) {
+        if (
+          event.data &&
+          event.data.size > 0
+        ) {
           audioChunksRef.current.push(
             event.data
           );
@@ -417,7 +477,7 @@ export default function ChatWindow({
         );
       };
 
-      recorder.start(100);
+      recorder.start(250);
 
       recordingIntervalRef.current =
         setInterval(() => {
@@ -433,38 +493,34 @@ export default function ChatWindow({
         }, 1000);
     } catch (error) {
       console.error(
-        'Error accessing microphone:',
+        'Microphone error:',
         error
       );
 
-      recordingStartedRef.current =
-        false;
+      setIsRecording(false);
 
       if (
         error.name ===
         'NotAllowedError'
       ) {
         alert(
-          'Microphone permission was denied. Allow microphone access and try again.'
-        );
-      } else if (
-        error.name ===
-        'NotFoundError'
-      ) {
-        alert(
-          'No microphone was found on this device.'
+          'Microphone permission was denied. Please allow microphone access.'
         );
       } else {
         alert(
-          'Could not start microphone recording.'
+          'Could not access the microphone.'
         );
       }
 
-      setIsRecording(false);
-
-      cleanupRecordingResources();
+      stopMediaTracks();
     }
   };
+
+  /*
+   * ============================
+   * FINISH RECORDING
+   * ============================
+   */
 
   const finishRecording = () => {
     const recorder =
@@ -474,7 +530,7 @@ export default function ChatWindow({
       return;
     }
 
-    const finish = () => {
+    const complete = () => {
       const mimeType =
         recorder.mimeType ||
         'audio/webm';
@@ -486,21 +542,15 @@ export default function ChatWindow({
         }
       );
 
-      recordingStartedRef.current =
-        false;
-
-      pointerDownRef.current = false;
-
       if (!blob.size) {
-        setIsRecording(false);
-        setIsLocked(false);
-        setIsPaused(false);
-
-        cleanupRecordingResources();
-
         alert(
           'No audio was recorded.'
         );
+
+        setIsRecording(false);
+        setIsLocked(false);
+
+        stopMediaTracks();
 
         return;
       }
@@ -516,14 +566,15 @@ export default function ChatWindow({
       });
 
       setShowPreview(true);
+
       setIsRecording(false);
       setIsLocked(false);
       setIsPaused(false);
 
-      cleanupRecordingResources();
+      stopMediaTracks();
     };
 
-    recorder.onstop = finish;
+    recorder.onstop = complete;
 
     try {
       if (
@@ -532,7 +583,7 @@ export default function ChatWindow({
       ) {
         recorder.stop();
       } else {
-        finish();
+        complete();
       }
     } catch (error) {
       console.error(
@@ -540,9 +591,15 @@ export default function ChatWindow({
         error
       );
 
-      finish();
+      complete();
     }
   };
+
+  /*
+   * ============================
+   * CANCEL RECORDING
+   * ============================
+   */
 
   const cancelRecording = () => {
     const recorder =
@@ -566,12 +623,7 @@ export default function ChatWindow({
 
     audioChunksRef.current = [];
 
-    cleanupRecordingResources();
-
-    recordingStartedRef.current =
-      false;
-
-    pointerDownRef.current = false;
+    stopMediaTracks();
 
     setIsRecording(false);
     setIsLocked(false);
@@ -580,40 +632,45 @@ export default function ChatWindow({
     setRecordedAudio(null);
     setShowPreview(false);
     setWaveformData([]);
+
+    isPointerDownRef.current =
+      false;
   };
+
+  /*
+   * ============================
+   * PAUSE / RESUME
+   * ============================
+   */
 
   const pauseRecording = () => {
     const recorder =
       mediaRecorderRef.current;
 
-    if (
-      !recorder ||
-      !isRecording
-    ) {
+    if (!recorder) {
       return;
     }
 
-    try {
-      if (
-        recorder.state ===
-        'recording'
-      ) {
-        recorder.pause();
-        setIsPaused(true);
-      } else if (
-        recorder.state ===
-        'paused'
-      ) {
-        recorder.resume();
-        setIsPaused(false);
-      }
-    } catch (error) {
-      console.error(
-        'Pause/resume error:',
-        error
-      );
+    if (
+      recorder.state ===
+      'recording'
+    ) {
+      recorder.pause();
+      setIsPaused(true);
+    } else if (
+      recorder.state ===
+      'paused'
+    ) {
+      recorder.resume();
+      setIsPaused(false);
     }
   };
+
+  /*
+   * ============================
+   * DELETE PREVIEW
+   * ============================
+   */
 
   const discardPreview = () => {
     if (recordedAudio?.url) {
@@ -625,120 +682,229 @@ export default function ChatWindow({
     setRecordedAudio(null);
     setShowPreview(false);
     setRecordingTime(0);
+    setWaveformData([]);
   };
 
-  const sendVoiceMessage =
-    async () => {
-      if (
-        !recordedAudio ||
-        loading
-      ) {
-        return;
-      }
+  /*
+   * ============================
+   * SEND VOICE MESSAGE
+   * ============================
+   */
 
-      try {
-        setLoading(true);
+  const sendVoiceMessage = async () => {
+    if (
+      !recordedAudio ||
+      loading
+    ) {
+      return;
+    }
 
-        const extension =
-          recordedAudio.mimeType.includes(
-            'mp4'
-          )
-            ? 'm4a'
-            : recordedAudio.mimeType.includes(
-                'ogg'
-              )
-              ? 'ogg'
-              : 'webm';
+    try {
+      setLoading(true);
 
-        const storagePath =
-          `voice-messages/${currentUser.uid}/${chatId.replace(
-            '/',
-            '_'
-          )}/${Date.now()}.${extension}`;
+      const extension =
+        recordedAudio.mimeType.includes(
+          'mp4'
+        )
+          ? 'm4a'
+          : recordedAudio.mimeType.includes(
+              'ogg'
+            )
+          ? 'ogg'
+          : 'webm';
 
-        const storageRef = ref(
-          storage,
-          storagePath
-        );
+      const storagePath =
+        `voice-messages/${currentUser.uid}/${chatId.replace(
+          '/',
+          '_'
+        )}/${Date.now()}.${extension}`;
 
-        await uploadBytes(
-          storageRef,
-          recordedAudio.blob,
-          {
-            contentType:
-              recordedAudio.mimeType,
+      const storageRef = ref(
+        storage,
+        storagePath
+      );
 
-            customMetadata: {
-              senderId:
-                currentUser.uid,
-
-              receiverId:
-                selectedUser.uid
-            }
-          }
-        );
-
-        const audioUrl =
-          await getDownloadURL(
-            storageRef
-          );
-
-        const messagesRef =
-          ref(
-            database,
-            `${chatId}/messages`
-          );
-
-        const newMsg =
-          push(messagesRef);
-
-        await set(newMsg, {
-          text: 'Voice message',
-          sender: currentUser.uid,
-          receiver:
-            selectedUser.uid,
-
-          senderName:
-            currentUser.displayName ||
-            currentUser.email,
-
-          timestamp:
-            new Date().toISOString(),
-
-          type: 'voice',
-          audioUrl,
-
-          duration:
-            recordedAudio.duration,
-
-          mimeType:
+      await uploadBytes(
+        storageRef,
+        recordedAudio.blob,
+        {
+          contentType:
             recordedAudio.mimeType,
+          customMetadata: {
+            senderId:
+              currentUser.uid,
+            receiverId:
+              selectedUser.uid
+          }
+        }
+      );
 
-          read: false
-        });
-
-        URL.revokeObjectURL(
-          recordedAudio.url
+      const audioUrl =
+        await getDownloadURL(
+          storageRef
         );
 
-        setRecordedAudio(null);
-        setShowPreview(false);
-        setRecordingTime(0);
+      const messagesRef = ref(
+        database,
+        `${chatId}/messages`
+      );
 
-        scrollToBottom();
-      } catch (error) {
-        console.error(
-          'Error sending voice message:',
-          error
-        );
+      const newMsg =
+        push(messagesRef);
 
-        alert(
-          `Could not send voice message: ${error.message}`
-        );
-      } finally {
-        setLoading(false);
+      await set(newMsg, {
+        text: 'Voice message',
+        sender:
+          currentUser.uid,
+        receiver:
+          selectedUser.uid,
+        senderName:
+          currentUser.displayName ||
+          currentUser.email,
+        timestamp:
+          new Date().toISOString(),
+        type: 'voice',
+        audioUrl,
+        duration:
+          recordedAudio.duration,
+        mimeType:
+          recordedAudio.mimeType,
+        read: false
+      });
+
+      URL.revokeObjectURL(
+        recordedAudio.url
+      );
+
+      setRecordedAudio(null);
+      setShowPreview(false);
+      setRecordingTime(0);
+      setWaveformData([]);
+
+      scrollToBottom();
+    } catch (error) {
+      console.error(
+        'Error sending voice message:',
+        error
+      );
+
+      alert(
+        `Could not send voice message: ${error.message}`
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /*
+   * ============================
+   * HOLD + SWIPE UP TO LOCK
+   * ============================
+   */
+
+  const handlePointerDown = (
+    event
+  ) => {
+    if (
+      event.pointerType ===
+        'mouse' &&
+      event.button !== 0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+
+    isPointerDownRef.current =
+      true;
+
+    pointerIdRef.current =
+      event.pointerId;
+
+    recordingStartYRef.current =
+      event.clientY;
+
+    try {
+      micButtonRef.current?.setPointerCapture?.(
+        event.pointerId
+      );
+    } catch {}
+
+    startRecording();
+  };
+
+  const handlePointerMove = (
+    event
+  ) => {
+    if (
+      !isRecording ||
+      isLocked ||
+      !isPointerDownRef.current
+    ) {
+      return;
+    }
+
+    const distanceUp =
+      recordingStartYRef.current -
+      event.clientY;
+
+    /*
+     * Move 60px upward to lock.
+     */
+    if (distanceUp >= 60) {
+      setIsLocked(true);
+
+      if (
+        navigator.vibrate
+      ) {
+        navigator.vibrate(40);
       }
-    };
+    }
+  };
+
+  const handlePointerUp = (
+    event
+  ) => {
+    event.preventDefault();
+
+    isPointerDownRef.current =
+      false;
+
+    if (!isRecording) {
+      return;
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * If locked, releasing the finger
+     * DOES NOT stop recording.
+     */
+    if (isLocked) {
+      return;
+    }
+
+    finishRecording();
+  };
+
+  const handlePointerCancel = () => {
+    isPointerDownRef.current =
+      false;
+
+    if (!isRecording) {
+      return;
+    }
+
+    if (!isLocked) {
+      cancelRecording();
+    }
+  };
+
+  /*
+   * ============================
+   * TEXT MESSAGES
+   * ============================
+   */
 
   const handleMessageChange = (
     event
@@ -758,7 +924,9 @@ export default function ChatWindow({
       value.length > 0
     ).catch(() => {});
 
-    if (typingTimeoutRef.current) {
+    if (
+      typingTimeoutRef.current
+    ) {
       clearTimeout(
         typingTimeoutRef.current
       );
@@ -788,11 +956,10 @@ export default function ChatWindow({
     try {
       setLoading(true);
 
-      const messagesRef =
-        ref(
-          database,
-          `${chatId}/messages`
-        );
+      const messagesRef = ref(
+        database,
+        `${chatId}/messages`
+      );
 
       const newMsg =
         push(messagesRef);
@@ -801,17 +968,13 @@ export default function ChatWindow({
         text,
         sender:
           currentUser.uid,
-
         receiver:
           selectedUser.uid,
-
         senderName:
           currentUser.displayName ||
           currentUser.email,
-
         timestamp:
           new Date().toISOString(),
-
         type: 'text',
         read: false
       });
@@ -842,163 +1005,10 @@ export default function ChatWindow({
   };
 
   /*
-   * HOLD TO RECORD
-   *
-   * Press and hold microphone:
-   * - recording starts
-   *
-   * Move finger/mouse upward:
-   * - recording locks
-   *
-   * Release without locking:
-   * - recording finishes
-   *
-   * Once locked:
-   * - releasing does NOT stop recording
-   * - use ✓ to finish
+   * ============================
+   * STYLES
+   * ============================
    */
-
-  const handlePointerDown = (
-    event
-  ) => {
-    if (
-      event.pointerType === 'mouse' &&
-      event.button !== 0
-    ) {
-      return;
-    }
-
-    if (
-      loading ||
-      showPreview ||
-      recordingStartedRef.current
-    ) {
-      return;
-    }
-
-    event.preventDefault();
-
-    pointerDownRef.current = true;
-
-    pointerIdRef.current =
-      event.pointerId;
-
-    lockTriggeredRef.current =
-      false;
-
-    setIsHoldingMic(true);
-
-    try {
-      micButtonRef.current?.setPointerCapture?.(
-        event.pointerId
-      );
-    } catch (error) {
-      console.warn(
-        'Pointer capture unavailable:',
-        error
-      );
-    }
-
-    startRecording();
-  };
-
-  const handlePointerMove = (
-    event
-  ) => {
-    if (
-      !pointerDownRef.current ||
-      !isRecording ||
-      isLocked ||
-      lockTriggeredRef.current
-    ) {
-      return;
-    }
-
-    const rect =
-      micButtonRef.current?.getBoundingClientRect();
-
-    if (!rect) {
-      return;
-    }
-
-    const distanceUp =
-      rect.top - event.clientY;
-
-    /*
-     * 60px is deliberately used instead of
-     * 80px so the lock is easier to trigger
-     * on phones and touch screens.
-     */
-    if (distanceUp >= 60) {
-      lockTriggeredRef.current =
-        true;
-
-      setIsLocked(true);
-      setIsHoldingMic(false);
-
-      try {
-        micButtonRef.current?.releasePointerCapture?.(
-          event.pointerId
-        );
-      } catch (error) {
-        // Ignore pointer capture errors.
-      }
-    }
-  };
-
-  const handlePointerUp = (
-    event
-  ) => {
-    if (
-      event.pointerId !==
-      pointerIdRef.current
-    ) {
-      return;
-    }
-
-    pointerDownRef.current = false;
-
-    setIsHoldingMic(false);
-
-    /*
-     * If recording was locked, releasing
-     * the finger must NOT stop it.
-     */
-    if (isLocked) {
-      return;
-    }
-
-    if (isRecording) {
-      finishRecording();
-    }
-
-    try {
-      micButtonRef.current?.releasePointerCapture?.(
-        event.pointerId
-      );
-    } catch (error) {
-      // Ignore pointer capture errors.
-    }
-  };
-
-  const handlePointerCancel = () => {
-    pointerDownRef.current = false;
-
-    setIsHoldingMic(false);
-
-    if (
-      isRecording &&
-      !isLocked
-    ) {
-      cancelRecording();
-    }
-  };
-
-  const handleMicContextMenu = (
-    event
-  ) => {
-    event.preventDefault();
-  };
 
   const bgColor = darkMode
     ? '#1a1a1a'
@@ -1042,10 +1052,11 @@ export default function ChatWindow({
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        background: bgColor
+        background: bgColor,
+        color: textColor
       }}
     >
-      {/* Header */}
+      {/* CHAT HEADER */}
 
       <div
         style={{
@@ -1064,14 +1075,16 @@ export default function ChatWindow({
             margin: 0
           }}
         >
-          {selectedUser.displayName}
+          {selectedUser.displayName ||
+            'User'}
         </h3>
 
         <p
           style={{
             margin:
               '0.2rem 0 0',
-            fontSize: '0.9rem',
+            fontSize:
+              '0.9rem',
             opacity: 0.9
           }}
         >
@@ -1079,7 +1092,7 @@ export default function ChatWindow({
         </p>
       </div>
 
-      {/* Messages */}
+      {/* MESSAGES */}
 
       <div
         style={{
@@ -1092,192 +1105,213 @@ export default function ChatWindow({
         {messages.length === 0 ? (
           <div
             style={{
-              textAlign: 'center',
+              textAlign:
+                'center',
               color: darkMode
                 ? '#666'
                 : '#999',
-              marginTop: '2rem'
+              marginTop:
+                '2rem'
             }}
           >
             <p>
               No messages yet.
-              Start the conversation!
+              Start the
+              conversation!
             </p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              style={{
-                marginBottom: '1rem',
-                display: 'flex',
-                justifyContent:
-                  msg.sender ===
-                  currentUser.uid
-                    ? 'flex-end'
-                    : 'flex-start',
-                alignItems:
-                  'flex-end'
-              }}
-            >
+          messages.map(
+            (msg) => (
               <div
+                key={msg.id}
                 style={{
-                  maxWidth: '70%',
-                  padding:
-                    msg.type ===
-                    'voice'
-                      ? '0.6rem 0.8rem'
-                      : '0.8rem 1rem',
-
-                  borderRadius:
-                    '15px',
-
-                  background:
+                  marginBottom:
+                    '1rem',
+                  display:
+                    'flex',
+                  justifyContent:
                     msg.sender ===
                     currentUser.uid
-                      ? messageBgMe
-                      : messageBgOther,
-
-                  color:
-                    msg.sender ===
-                    currentUser.uid
-                      ? messageTextMe
-                      : messageTextOther,
-
-                  wordBreak:
-                    'break-word'
+                      ? 'flex-end'
+                      : 'flex-start',
+                  alignItems:
+                    'flex-end'
                 }}
               >
-                {msg.type ===
-                'text' ? (
-                  <p
-                    style={{
-                      margin: 0
-                    }}
-                  >
-                    {linkifyText(
-                      msg.text
-                    )}
-                  </p>
-                ) : msg.type ===
-                    'voice' &&
-                  msg.audioUrl ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems:
-                        'center',
-                      gap: '0.6rem'
-                    }}
-                  >
-                    <audio
-                      controls
-                      preload="metadata"
-                      src={
-                        msg.audioUrl
-                      }
-                      style={{
-                        height:
-                          '36px',
-                        width:
-                          '230px',
-                        maxWidth:
-                          '100%'
-                      }}
-                    />
-
-                    <span
-                      style={{
-                        fontSize:
-                          '0.75rem',
-                        whiteSpace:
-                          'nowrap'
-                      }}
-                    >
-                      {formatTime(
-                        Number(
-                          msg.duration
-                        ) || 0
-                      )}
-                    </span>
-                  </div>
-                ) : msg.type ===
-                  'voice' ? (
-                  <p
-                    style={{
-                      margin: 0
-                    }}
-                  >
-                    🎤 Voice message
-                    unavailable
-                  </p>
-                ) : (
-                  <a
-                    href={
-                      msg.fileUrl
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color:
-                        msg.sender ===
-                        currentUser.uid
-                          ? 'white'
-                          : '#667eea',
-                      textDecoration:
-                        'underline'
-                    }}
-                  >
-                    📎{' '}
-                    {msg.fileName}
-                  </a>
-                )}
-
-                <p
+                <div
                   style={{
-                    margin:
-                      '0.3rem 0 0',
-                    fontSize:
-                      '0.7rem',
-                    opacity: 0.75,
-                    display: 'flex',
-                    alignItems:
-                      'center',
-                    gap: '0.3rem'
+                    maxWidth:
+                      '70%',
+                    padding:
+                      msg.type ===
+                      'voice'
+                        ? '0.6rem 0.8rem'
+                        : '0.8rem 1rem',
+                    borderRadius:
+                      '15px',
+                    background:
+                      msg.sender ===
+                      currentUser.uid
+                        ? messageBgMe
+                        : messageBgOther,
+                    color:
+                      msg.sender ===
+                      currentUser.uid
+                        ? messageTextMe
+                        : messageTextOther,
+                    wordBreak:
+                      'break-word'
                   }}
                 >
-                  {new Date(
-                    msg.timestamp
-                  ).toLocaleTimeString(
-                    [],
-                    {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    }
+                  {/* TEXT */}
+
+                  {msg.type ===
+                  'text' ? (
+                    <p
+                      style={{
+                        margin: 0
+                      }}
+                    >
+                      {linkifyText(
+                        msg.text
+                      )}
+                    </p>
+                  ) : msg.type ===
+                      'voice' &&
+                    msg.audioUrl ? (
+                    /* VOICE */
+
+                    <div
+                      style={{
+                        display:
+                          'flex',
+                        alignItems:
+                          'center',
+                        gap: '0.6rem'
+                      }}
+                    >
+                      <audio
+                        controls
+                        preload="metadata"
+                        src={
+                          msg.audioUrl
+                        }
+                        style={{
+                          height:
+                            '36px',
+                          width:
+                            '230px',
+                          maxWidth:
+                            '100%'
+                        }}
+                      />
+
+                      <span
+                        style={{
+                          fontSize:
+                            '0.75rem',
+                          whiteSpace:
+                            'nowrap'
+                        }}
+                      >
+                        {formatTime(
+                          Number(
+                            msg.duration
+                          ) || 0
+                        )}
+                      </span>
+                    </div>
+                  ) : msg.type ===
+                    'voice' ? (
+                    <p
+                      style={{
+                        margin: 0
+                      }}
+                    >
+                      🎤 Voice
+                      message
+                      unavailable
+                    </p>
+                  ) : (
+                    /* FILE */
+
+                    <a
+                      href={
+                        msg.fileUrl
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color:
+                          msg.sender ===
+                          currentUser.uid
+                            ? 'white'
+                            : '#667eea',
+                        textDecoration:
+                          'underline'
+                      }}
+                    >
+                      📎{' '}
+                      {
+                        msg.fileName
+                      }
+                    </a>
                   )}
 
-                  {msg.sender ===
-                    currentUser.uid && (
-                    <span>
-                      {msg.read
-                        ? '✓✓'
-                        : '✓'}
-                    </span>
-                  )}
-                </p>
+                  {/* TIME + READ RECEIPT */}
+
+                  <p
+                    style={{
+                      margin:
+                        '0.3rem 0 0',
+                      fontSize:
+                        '0.7rem',
+                      opacity:
+                        0.75,
+                      display:
+                        'flex',
+                      alignItems:
+                        'center',
+                      gap:
+                        '0.3rem'
+                    }}
+                  >
+                    {new Date(
+                      msg.timestamp
+                    ).toLocaleTimeString(
+                      [],
+                      {
+                        hour: '2-digit',
+                        minute:
+                          '2-digit'
+                      }
+                    )}
+
+                    {msg.sender ===
+                      currentUser.uid && (
+                      <span>
+                        {msg.read
+                          ? '✓✓'
+                          : '✓'}
+                      </span>
+                    )}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))
+            )
+          )
         )}
 
-        {/* Typing indicator */}
+        {/* TYPING */}
 
         {isTyping && (
           <div
             style={{
               marginBottom:
                 '1rem',
-              display: 'flex',
+              display:
+                'flex',
               justifyContent:
                 'flex-start'
             }}
@@ -1304,7 +1338,9 @@ export default function ChatWindow({
         />
       </div>
 
-      {/* Voice preview */}
+      {/* ==========================
+          VOICE REVIEW
+          ========================== */}
 
       {showPreview &&
         recordedAudio && (
@@ -1316,14 +1352,12 @@ export default function ChatWindow({
                 darkMode
                   ? '#2d2d2d'
                   : 'white',
-
               borderTop:
                 `1px solid ${inputBorder}`,
-
-              display: 'flex',
+              display:
+                'flex',
               alignItems:
                 'center',
-
               gap: '0.6rem'
             }}
           >
@@ -1336,86 +1370,108 @@ export default function ChatWindow({
               style={{
                 flex: 1,
                 minWidth: 0,
-                height: '38px'
+                height:
+                  '40px'
               }}
             />
+
+            {/* DELETE */}
 
             <button
               type="button"
               onClick={
                 discardPreview
               }
-              disabled={loading}
-              title="Discard recording"
+              disabled={
+                loading
+              }
+              title="Delete recording"
               style={{
-                width: '40px',
-                height: '40px',
-                border: 'none',
+                width: '42px',
+                height: '42px',
+                border:
+                  'none',
                 borderRadius:
                   '50%',
                 background:
                   '#777',
                 color:
                   'white',
-                cursor: loading
-                  ? 'not-allowed'
-                  : 'pointer',
+                cursor:
+                  'pointer',
                 flexShrink: 0
               }}
             >
-              ✕
+              🗑
             </button>
+
+            {/* SEND */}
 
             <button
               type="button"
               onClick={
                 sendVoiceMessage
               }
-              disabled={loading}
+              disabled={
+                loading
+              }
               title="Send voice note"
               style={{
-                width: '40px',
-                height: '40px',
-                border: 'none',
+                width: '42px',
+                height: '42px',
+                border:
+                  'none',
                 borderRadius:
                   '50%',
                 background:
                   '#667eea',
                 color:
                   'white',
-                cursor: loading
-                  ? 'not-allowed'
-                  : 'pointer',
+                cursor:
+                  loading
+                    ? 'not-allowed'
+                    : 'pointer',
+                opacity:
+                  loading
+                    ? 0.6
+                    : 1,
                 flexShrink: 0
               }}
             >
-              {loading
-                ? '⌛'
-                : '➤'}
+              ➤
             </button>
           </div>
         )}
 
-      {/* Composer */}
+      {/* ==========================
+          MESSAGE / RECORDING BAR
+          ========================== */}
 
       <div
         style={{
-          padding: '0.8rem',
-          background: inputBg,
+          padding:
+            '0.8rem',
+          background:
+            inputBg,
           borderTop:
             `1px solid ${inputBorder}`,
-          display: 'flex',
+          display:
+            'flex',
           gap: '0.5rem',
           alignItems:
             'center',
-          touchAction: 'none',
-          userSelect: 'none'
+          touchAction:
+            'none'
         }}
       >
         {!isRecording ? (
           <>
+            {/* MICROPHONE */}
+
             <button
-              ref={micButtonRef}
+              ref={
+                micButtonRef
+              }
               type="button"
               onPointerDown={
                 handlePointerDown
@@ -1429,19 +1485,15 @@ export default function ChatWindow({
               onPointerCancel={
                 handlePointerCancel
               }
-              onContextMenu={
-                handleMicContextMenu
-              }
               disabled={
-                loading ||
-                showPreview
+                loading
               }
               title="Hold to record • swipe up to lock"
-              aria-label="Hold to record voice message"
               style={{
-                width: '42px',
-                height: '42px',
-                border: 'none',
+                width: '48px',
+                height: '48px',
+                border:
+                  'none',
                 borderRadius:
                   '50%',
                 background:
@@ -1449,32 +1501,37 @@ export default function ChatWindow({
                 color:
                   'white',
                 cursor:
-                  loading ||
-                  showPreview
+                  loading
                     ? 'not-allowed'
                     : 'pointer',
                 fontSize:
-                  '1.2rem',
+                  '1.3rem',
                 flexShrink: 0,
                 touchAction:
                   'none',
+                userSelect:
+                  'none',
                 WebkitUserSelect:
                   'none',
-                userSelect:
+                WebkitTouchCallout:
                   'none'
               }}
             >
               🎤
             </button>
 
+            {/* TEXT INPUT */}
+
             <form
               onSubmit={
                 handleSendMessage
               }
               style={{
-                display: 'flex',
+                display:
+                  'flex',
                 flex: 1,
-                gap: '0.5rem'
+                gap:
+                  '0.5rem'
               }}
             >
               <input
@@ -1488,7 +1545,9 @@ export default function ChatWindow({
                   handleMessageChange
                 }
                 placeholder="Type a message..."
-                disabled={loading}
+                disabled={
+                  loading
+                }
                 autoComplete="off"
                 style={{
                   flex: 1,
@@ -1508,9 +1567,7 @@ export default function ChatWindow({
                   color:
                     textColor,
                   boxSizing:
-                    'border-box',
-                  userSelect:
-                    'text'
+                    'border-box'
                 }}
               />
 
@@ -1521,9 +1578,12 @@ export default function ChatWindow({
                   !newMessage.trim()
                 }
                 style={{
-                  width: '42px',
-                  height: '42px',
-                  border: 'none',
+                  width:
+                    '42px',
+                  height:
+                    '42px',
+                  border:
+                    'none',
                   borderRadius:
                     '50%',
                   background:
@@ -1545,13 +1605,19 @@ export default function ChatWindow({
             </form>
           </>
         ) : (
+          /* ==========================
+             ACTIVE RECORDING
+             ========================== */
+
           <div
             style={{
               flex: 1,
-              display: 'flex',
+              display:
+                'flex',
               alignItems:
                 'center',
-              gap: '0.6rem',
+              gap:
+                '0.6rem',
               background:
                 darkMode
                   ? '#333'
@@ -1560,12 +1626,10 @@ export default function ChatWindow({
                 '0.6rem 0.8rem',
               borderRadius:
                 '22px',
-              minWidth: 0,
-              boxSizing:
-                'border-box'
+              minWidth: 0
             }}
           >
-            {/* Timer */}
+            {/* TIME */}
 
             <span
               style={{
@@ -1576,9 +1640,7 @@ export default function ChatWindow({
                 fontWeight:
                   'bold',
                 minWidth:
-                  '45px',
-                fontVariantNumeric:
-                  'tabular-nums'
+                  '45px'
               }}
             >
               {formatTime(
@@ -1586,38 +1648,39 @@ export default function ChatWindow({
               )}
             </span>
 
-            {/* Waveform */}
+            {/* WAVEFORM */}
 
             <div
               style={{
                 flex: 1,
-                height: '30px',
-                display: 'flex',
+                height:
+                  '30px',
+                display:
+                  'flex',
                 alignItems:
                   'center',
                 gap: '2px',
                 overflow:
-                  'hidden',
-                minWidth: 0
+                  'hidden'
               }}
             >
-              {waveformData.length ? (
-                waveformData.map(
-                  (
-                    value,
-                    index
-                  ) => (
-                    <span
-                      key={
-                        index
-                      }
-                      style={{
-                        width:
-                          '3px',
-                        minWidth:
-                          '3px',
-                        height:
-                          `${Math.max(
+              {waveformData.length >
+              0
+                ? waveformData.map(
+                    (
+                      value,
+                      index
+                    ) => (
+                      <span
+                        key={
+                          index
+                        }
+                        style={{
+                          width:
+                            '3px',
+                          minWidth:
+                            '3px',
+                          height: `${Math.max(
                             4,
                             Math.min(
                               28,
@@ -1625,45 +1688,43 @@ export default function ChatWindow({
                                 5
                             )
                           )}px`,
-                        borderRadius:
-                          '2px',
-                        background:
-                          isPaused
-                            ? '#ff9800'
-                            : '#667eea'
-                      }}
-                    />
+                          borderRadius:
+                            '2px',
+                          background:
+                            isPaused
+                              ? '#ff9800'
+                              : '#667eea'
+                        }}
+                      />
+                    )
                   )
-                )
-              ) : (
-                Array.from({
-                  length: 32
-                }).map(
-                  (
-                    _,
-                    index
-                  ) => (
-                    <span
-                      key={
-                        index
-                      }
-                      style={{
-                        width:
-                          '3px',
-                        height:
-                          '5px',
-                        borderRadius:
-                          '2px',
-                        background:
-                          '#bbb'
-                      }}
-                    />
-                  )
-                )
-              )}
+                : Array.from({
+                    length: 25
+                  }).map(
+                    (
+                      _,
+                      index
+                    ) => (
+                      <span
+                        key={
+                          index
+                        }
+                        style={{
+                          width:
+                            '3px',
+                          height:
+                            '5px',
+                          borderRadius:
+                            '2px',
+                          background:
+                            '#bbb'
+                        }}
+                      />
+                    )
+                  )}
             </div>
 
-            {/* Cancel */}
+            {/* CANCEL */}
 
             <button
               type="button"
@@ -1671,11 +1732,13 @@ export default function ChatWindow({
                 cancelRecording
               }
               title="Cancel recording"
-              aria-label="Cancel recording"
               style={{
-                width: '36px',
-                height: '36px',
-                border: 'none',
+                width:
+                  '38px',
+                height:
+                  '38px',
+                border:
+                  'none',
                 borderRadius:
                   '50%',
                 background:
@@ -1690,7 +1753,7 @@ export default function ChatWindow({
               ✕
             </button>
 
-            {/* Pause / Resume */}
+            {/* PAUSE / RESUME */}
 
             <button
               type="button"
@@ -1699,18 +1762,16 @@ export default function ChatWindow({
               }
               title={
                 isPaused
-                  ? 'Resume'
-                  : 'Pause'
-              }
-              aria-label={
-                isPaused
                   ? 'Resume recording'
                   : 'Pause recording'
               }
               style={{
-                width: '36px',
-                height: '36px',
-                border: 'none',
+                width:
+                  '38px',
+                height:
+                  '38px',
+                border:
+                  'none',
                 borderRadius:
                   '50%',
                 background:
@@ -1727,20 +1788,22 @@ export default function ChatWindow({
                 : 'Ⅱ'}
             </button>
 
-            {/* Finish after lock */}
+            {/* LOCK / FINISH */}
 
-            {isLocked && (
+            {isLocked ? (
               <button
                 type="button"
                 onClick={
                   finishRecording
                 }
                 title="Finish recording"
-                aria-label="Finish recording"
                 style={{
-                  width: '36px',
-                  height: '36px',
-                  border: 'none',
+                  width:
+                    '42px',
+                  height:
+                    '42px',
+                  border:
+                    'none',
                   borderRadius:
                     '50%',
                   background:
@@ -1749,66 +1812,57 @@ export default function ChatWindow({
                     'white',
                   cursor:
                     'pointer',
+                  fontSize:
+                    '1.1rem',
                   flexShrink: 0
                 }}
               >
                 ✓
               </button>
+            ) : (
+              <div
+                style={{
+                  display:
+                    'flex',
+                  flexDirection:
+                    'column',
+                  alignItems:
+                    'center',
+                  justifyContent:
+                    'center',
+                  minWidth:
+                    '48px'
+                }}
+              >
+                <span
+                  style={{
+                    fontSize:
+                      '1.3rem',
+                    lineHeight: 1
+                  }}
+                >
+                  🔒
+                </span>
+
+                <span
+                  style={{
+                    fontSize:
+                      '0.65rem',
+                    color:
+                      darkMode
+                        ? '#aaa'
+                        : '#777',
+                    whiteSpace:
+                      'nowrap'
+                  }}
+                >
+                  Swipe up
+                </span>
+              </div>
             )}
-
-            {/* Lock status */}
-
-            <span
-              style={{
-                fontSize:
-                  '0.7rem',
-                color:
-                  darkMode
-                    ? '#aaa'
-                    : '#777',
-                whiteSpace:
-                  'nowrap'
-              }}
-            >
-              {isLocked
-                ? '🔒 Locked'
-                : '↑ Lock'}
-            </span>
           </div>
         )}
       </div>
-
-      {/* Swipe hint */}
-
-      {isHoldingMic &&
-        isRecording &&
-        !isLocked && (
-          <div
-            style={{
-              position:
-                'fixed',
-              bottom: '75px',
-              left: '50%',
-              transform:
-                'translateX(-50%)',
-              padding:
-                '0.45rem 0.8rem',
-              borderRadius:
-                '20px',
-              background:
-                'rgba(0,0,0,0.75)',
-              color:
-                'white',
-              fontSize:
-                '0.75rem',
-              zIndex: 1000,
-              pointerEvents:
-                'none'
-            }}
-          >
-            ↑ Swipe up to lock
-          </div>
-        )}
     </div>
   );
 }
