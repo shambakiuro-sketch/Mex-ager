@@ -1136,7 +1136,7 @@ export default function ChatWindow({
                       onClick={() =>
                         playVoiceMessage(
                           msg.id,
-                          msg.fileUrl
+                          msg.fileUrl || msg.audioUrl
                         )
                       }
                       style={{
