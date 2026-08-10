@@ -28,7 +28,7 @@ export default function Chat() {
 
     // Register Service Worker for FCM (improved for mobile)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker-improved.js')
+      navigator.serviceWorker.register('/service-worker.js')
         .then((registration) => {
           console.log('Service Worker registered:', registration);
           
