@@ -815,6 +815,7 @@ export default function ChatWindow({
         timestamp:
           new Date().toISOString(),
         fileUrl: fileUrl,
+        audioUrl: fileUrl,
         duration:
           recordedAudio.duration,
         read: false
