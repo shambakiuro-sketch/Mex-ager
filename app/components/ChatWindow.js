@@ -1,6 +1,6 @@
 'use client';
 
-import { useIsMobile } from './useIsMobile';
+import { useIsMobile } from '../lib/useIsMobile';
 import ChatWindowMobile from './ChatWindowMobile';
 import ChatWindowDesktop from './ChatWindowDesktop';
 
