@@ -849,76 +849,168 @@ export default function ChatWindow({
   // VOICE PLAYBACK
   // ========================================
 
-  const playVoiceMessage = (
+  const playVoiceMessage = (messageId, fileUrl) => {
+  // Make sure we actually received an audio URL
+  if (!fileUrl || typeof fileUrl !== 'string') {
+    console.error('Voice message has no valid URL:', fileUrl);
+    alert('Voice message file is unavailable.');
+    return;
+  }
+
+  console.log('Attempting to play voice message:', {
     messageId,
     fileUrl
-  ) => {
-    // Stop other messages
-    if (playingMessageId !== messageId) {
-      if (
-        audioPlayersRef.current[
-          playingMessageId
-        ]
-      ) {
-        audioPlayersRef.current[
-          playingMessageId
-        ].pause();
-      }
+  });
 
-      setPlayingMessageId(messageId);
-      setPlaybackProgress({});
-      setPlaybackSpeed({ [messageId]: 1 });
+  // Stop any other currently playing voice message
+  if (
+    playingMessageId &&
+    playingMessageId !== messageId &&
+    audioPlayersRef.current[playingMessageId]
+  ) {
+    const previousAudio =
+      audioPlayersRef.current[playingMessageId];
 
-      const audio = new Audio(fileUrl);
+    previousAudio.pause();
+    previousAudio.currentTime = 0;
+  }
 
-      audio.onloadedmetadata = () => {
-        setPlaybackDuration((prev) => ({
-          ...prev,
-          [messageId]: audio.duration
-        }));
-      };
+  // If this message already has an audio player, toggle it
+  if (
+    playingMessageId === messageId &&
+    audioPlayersRef.current[messageId]
+  ) {
+    const existingAudio =
+      audioPlayersRef.current[messageId];
 
-      audio.ontimeupdate = () => {
-        setPlaybackProgress((prev) => ({
-          ...prev,
-          [messageId]: audio.currentTime
-        }));
-      };
-
-      audio.onended = () => {
-        setPlayingMessageId(null);
-        setPlaybackProgress({});
-        setPlaybackSpeed({});
-      };
-
-      audio.playbackRate = playbackSpeed[messageId] || 1;
-      audioPlayersRef.current[messageId] =
-        audio;
-
-      audio.play().catch((error) => {
-        console.error('Playback error:', error);
-        alert('Could not play voice message');
-      });
+    if (existingAudio.paused) {
+      existingAudio
+        .play()
+        .catch((error) => {
+          console.error(
+            'Could not resume voice message:',
+            error
+          );
+          alert(
+            `Could not play voice message: ${error.message || 'Unknown error'}`
+          );
+        });
     } else {
-      // Toggle play/pause
-      if (
-        audioPlayersRef.current[messageId]
-      ) {
-        if (
-          audioPlayersRef.current[messageId]
-            .paused
-        ) {
-          audioPlayersRef.current[
-            messageId
-          ].play();
-        } else {
-          audioPlayersRef.current[
-            messageId
-          ].pause();
-        }
-      }
+      existingAudio.pause();
     }
+
+    return;
+  }
+
+  // Reset playback state
+  setPlayingMessageId(messageId);
+  setPlaybackProgress({});
+  setPlaybackSpeed({
+    [messageId]: 1
+  });
+
+  // Create audio player
+  const audio = new Audio();
+
+  audio.preload = 'auto';
+
+  audio.src = fileUrl;
+
+  // Audio metadata loaded successfully
+  audio.onloadedmetadata = () => {
+    console.log(
+      'Voice metadata loaded:',
+      audio.duration
+    );
+
+    setPlaybackDuration((prev) => ({
+      ...prev,
+      [messageId]: Number.isFinite(audio.duration)
+        ? audio.duration
+        : 0
+    }));
   };
+
+  // Update playback progress
+  audio.ontimeupdate = () => {
+    setPlaybackProgress((prev) => ({
+      ...prev,
+      [messageId]: audio.currentTime
+    }));
+  };
+
+  // When playback finishes
+  audio.onended = () => {
+    setPlayingMessageId(null);
+
+    setPlaybackProgress((prev) => ({
+      ...prev,
+      [messageId]: 0
+    }));
+
+    setPlaybackSpeed((prev) => {
+      const next = { ...prev };
+      delete next[messageId];
+      return next;
+    });
+  };
+
+  // Handle audio loading/playback errors
+  audio.onerror = () => {
+    const mediaError = audio.error;
+
+    console.error('Voice audio error:', {
+      messageId,
+      fileUrl,
+      errorCode: mediaError?.code,
+      errorMessage: mediaError?.message
+    });
+
+    setPlayingMessageId(null);
+
+    alert(
+      'Could not play voice message. The audio file may be unavailable or unsupported.'
+    );
+  };
+
+  audio.onpause = () => {
+    console.log('Voice message paused:', messageId);
+  };
+
+  audio.onplay = () => {
+    console.log('Voice message started playing:', messageId);
+  };
+
+  audio.playbackRate =
+    playbackSpeed[messageId] || 1;
+
+  audioPlayersRef.current[messageId] = audio;
+
+  // Load the audio before attempting playback
+  audio.load();
+
+  audio
+    .play()
+    .catch((error) => {
+      console.error(
+        'Voice playback failed:',
+        {
+          error,
+          name: error?.name,
+          message: error?.message,
+          fileUrl
+        }
+      );
+
+      setPlayingMessageId(null);
+
+      alert(
+        `Could not play voice message: ${
+          error?.message || 'The audio could not be loaded.'
+        }`
+      );
+    });
+};
 
   // ========================================
   // CHANGE PLAYBACK SPEED
